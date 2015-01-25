@@ -1,0 +1,22 @@
+{
+    "name": "sketches/phpstub",
+    "type": "project",
+    "description": "Quick and dirty class/interface generator for Composer-based stuff",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=5.4.0",
+        "ext-json": "*"
+    },
+    "autoload-dev": {
+        "psr-4": {"Foo\\Four\\": "tests/psr-4/"},
+        "psr-0": {"Foo\\Zero\\": "tests/psr-0/"}
+    },
+    "authors": [
+        {
+            "name": "Sketches",
+            "email": "contact@sketches.su"
+        }
+    ],
+    "bin": ["phpstub"]
+}
+

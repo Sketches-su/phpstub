@@ -1,0 +1,310 @@
+#!/usr/bin/env php
+<?php
+
+function help_and_die()
+{
+    echo "Syntax: phpstub {command} [options...]\n";
+    echo "Valid commands are:\n";
+    echo "  class {clsname} - create class\n";
+    echo "  iface {ifcname} - create interface\n\n";
+    echo "Class/interface name format: class<parent<interface<trait<...\n";
+    echo "i.e. it's a sequence of class, interface or trait names in any order delimited\n";
+    echo "by '<' character. Their presense and type are detected automatically\n";
+    echo "using Composer's autoloader. If every name starts with '\\',\n";
+    echo "it goes from the root namespace, otherwise it's resolved relative\n";
+    echo "to the namespace learned from composer.json autoload directive.\n";
+    echo "composer.json must exist in the current directory. The path\n";
+    echo "to the first PSR autoloader will be taken as a destination.\n\n";
+    echo "Example: let's say there is \"psr-4\": {\"Foo\\\\\": \"src/\"}\n";
+    echo "in the composer.json 'autoload' section. Then by executing\n\n";
+    echo "  phpstub class 'Foo\\Util\\Cache<AbstractCache<\\ArrayAccess'\n\n";
+    echo "a new file src/Util/Cache.php will be created. There will be the definition\n";
+    echo "of \\Foo\\Util\\Cache class that extends \\Foo\\Util\\AbstractCache class\n";
+    echo "and implements \\ArrayAccess interface.\n";
+    die(1);
+}
+
+function tmpl($data)
+{
+    extract($data, EXTR_SKIP);
+    ob_start();
+    echo '<'."?php\n"; ?>
+/**
+ * ...
+ * 
+<?php if (!empty($author)): ?>
+ * @author     <?php echo $author."\n"; ?>
+ * @copyright  <?php echo $year.' '.$author."\n"; ?>
+<?php endif; if (!empty($package)): ?>
+ * @package    <?php echo $package."\n"; ?>
+<?php endif; if (!empty($license)): ?>
+ * @license    <?php echo $license_url.' '.$license."\n"; ?>
+<?php endif; ?>
+ */
+
+<?php if ($namespace): ?>
+namespace <?php echo $namespace; ?>;
+
+<?php endif; if (count($use)): foreach ($use as $row): ?>
+use <?php echo $row; ?>;
+<?php endforeach; ?>
+
+<?php endif; ?>
+/**
+ * ...
+ * 
+ * @package <?php echo $package."\n"; ?>
+ */
+<?php echo ($is_interface ? 'interface' : 'class').' '.$name; if ($extends) echo " extends $extends"; if ($implements) echo ' implements '.implode(', ', $implements); echo "\n"; ?>
+{
+<?php if ($traits): foreach ($traits as $row): ?>
+    use <?php echo $row; ?>;
+<?php endforeach; echo "    \n"; endif; if ($is_interface): ?>
+    // @TODO
+<?php else: ?>
+    /**
+     * ...
+     *
+     * @param  string ...
+     */
+    public function __construct()
+    {
+        // @TODO
+    }
+<?php endif; ?>
+}
+
+<?php
+    $result = ob_get_contents();
+    ob_end_clean();
+    return $result;
+}
+
+// ===========================================================================
+
+// Allow CLI only
+if (PHP_SAPI != 'cli') {
+    die('Command-line usage only');
+}
+
+// There must be 2 arguments (the third is the script name)
+if (count($argv) != 3) {
+    help_and_die();
+}
+
+// Interpret class string
+$deps  = array();
+$data  = array();
+$tmp   = explode('<', str_replace('/', '\\', $argv[2]));
+$class = ltrim(array_shift($tmp), '\\');
+
+switch ($argv[1]) {
+    case 'class':
+        $data['is_interface'] = false;
+        break;
+    
+    case 'iface':
+        $data['is_interface'] = true;
+        break;
+    
+    default:
+        echo "Wrong command!\n";
+        help_and_die();
+}
+
+if (!$class) {
+    echo "Class string format seems wrong!\n";
+    die(2);
+}
+
+if (false !== ($pos = strrpos($class, '\\'))) {
+    $namespace = substr($class, 0, $pos);
+    $data['name'] = substr($class, $pos + 1);
+} else {
+    $namespace = '';
+    $data['name'] = $class;
+}
+
+$data['namespace'] = $namespace;
+
+foreach ($tmp as $one) {
+    if ($one[0] == '\\') {
+        $deps[substr($one, 1)] = ltrim(strrchr($one, '\\'));
+    } else {
+        $root = $namespace;
+        
+        while (substr($one, 0, 3) == '..\\') {
+            $root = preg_replace('/\x5C?[^\x5C]+$/', '', $root);
+            $one = substr($one, 3);
+        }
+        
+        $deps[ltrim($root.'\\'.$one, '\\')] = ltrim(strrchr('\\'.$one, '\\'), '\\');
+    }
+}
+
+// Load composer.json
+if (!file_exists('composer.json')) {
+    echo "composer.json not found in the current directory!\n";
+    die(3);
+}
+
+if (null === ($json = json_decode(file_get_contents('composer.json'), true))) {
+    echo "Failed parsing composer.json! ".json_last_error_msg()."\n";
+    die(4);
+}
+
+// Determine the path to the class we gonna generate
+$path = null;
+$prefixes = array();
+
+foreach (array('autoload', 'autoload-dev') as $key) {
+    if (!isset($json[$key])) {
+        continue;
+    }
+    
+    foreach ($json[$key] as $k => $v) {
+        foreach ($v as $prefix => $dir) {
+            if ($prefix !== '') {
+                $prefix = trim($prefix, '\\').'\\';
+            }
+            
+            $dir = trim($dir, '\\/').'/';
+            
+            if (!isset($prefixes[$prefix])) {
+                switch ($k) {
+                    case 'psr-4':
+                        $prefixes[$prefix] = $dir;
+                        break;
+                    
+                    case 'psr-0':
+                        $prefixes[$prefix] = $dir.trim(str_replace('\\', '/', $prefix), '/').'/';
+                        break;
+                    
+                    default:
+                        // do nothing
+                }
+            }
+        }
+    }
+}
+
+$bestlen = -1;
+
+foreach ($prefixes as $k => $v) {
+    $len = strlen($k);
+    
+    if (($k === '') || (0 === strncmp($k, $class, $len))) {
+        $path = $v.$data['name'].'.php';
+        $bestlen = $len;
+    }
+}
+
+if (null === $path) {
+    echo "Could not determine the path for the class to be generated!\n";
+    die(5);
+}
+
+if ($path[0] == '/') {
+    $path = '.'.$path;
+}
+
+// Pick some parameters from composer.json
+$lic_urls = array(
+    'Apache-2.0'   => 'http://www.apache.org/licenses/LICENSE-2.0',
+    'BSD-2-Clause' => 'http://opensource.org/licenses/BSD-2-Clause',
+    'BSD-3-Clause' => 'http://opensource.org/licenses/BSD-3-Clause',
+    'BSD-4-Clause' => 'http://spdx.org/licenses/BSD-4-Clause',
+    'GPL-2.0'      => 'http://spdx.org/licenses/GPL-2.0',
+    'GPL-2.0+'     => 'http://spdx.org/licenses/GPL-2.0+',
+    'GPL-3.0'      => 'http://spdx.org/licenses/GPL-3.0',
+    'GPL-3.0+'     => 'http://spdx.org/licenses/GPL-3.0+',
+    'LGPL-2.1'     => 'http://spdx.org/licenses/LGPL-2.1',
+    'LGPL-2.1+'    => 'http://spdx.org/licenses/LGPL-2.1+',
+    'LGPL-3.0'     => 'http://spdx.org/licenses/LGPL-3.0',
+    'LGPL-3.0+'    => 'http://spdx.org/licenses/LGPL-3.0+',
+    'MIT'          => 'http://opensource.org/licenses/MIT',
+    'proprietary'  => 'https://en.wikipedia.org/wiki/Proprietary_software',
+);
+
+if (isset($json['license'])) {
+    $lic = is_array($json['license']) ?
+        reset($json['license']) :
+        $json['license'];
+    
+    $data['license'] = $lic;
+    
+    if (isset($lic_urls[$lic])) {
+        $data['license_url'] = $lic_urls[$lic];
+    }
+}
+
+$data['year'] = date('Y');
+
+if (isset($json['authors'])) {
+    $author = reset($json['authors']);
+    $data['author'] = $author['name'];
+    
+    if (!empty($author['email'])) {
+        $data['author'] .= ' <'.$author['email'].'>';
+    }
+}
+
+$data['package'] = $json['name'];
+
+// Include the autoloader
+$autoloader = (isset($json['config']['vendor-dir']) ? trim($json['config']['vendor-dir'], '/') : 'vendor').'/autoload.php';
+
+if (!file_exists($autoloader)) {
+    echo "$autoloader not found!\n";
+    die(7);
+}
+
+require $autoloader;
+
+// Determine the type of the stuff
+$data['use'] = array();
+$data['extends'] = null;
+$data['implements'] = $data['traits'] = $uses = array();
+
+foreach ($deps as $k => $v) {
+    $touse = false;
+    
+    if (class_exists($k)) {
+        if (null !== $data['extends']) {
+            echo "Class can't extend something twice!\n";
+            die(6);
+        }
+        
+        $data['extends'] = $v;
+        $touse = true;
+    } elseif (interface_exists($k)) {
+        $data['implements'][] = $v;
+        $touse = true;
+    } elseif (trait_exists($k)) {
+        $data['traits'][] = $k;
+    } else {
+        echo "$k not found!\n";
+        die(7);
+    }
+    
+    if ($touse) {
+        if (0 !== strncmp($k, $namespace.'\\', strlen($namespace + 1))) {
+            $data['uses'][] = $k;
+        }
+    }
+}
+
+// Create directory structure
+$dir = '';
+$chunks = explode('/', $path);
+array_pop($chunks);
+
+foreach ($chunks as $one) {
+    if (!is_dir($dir .= $one.'/')) {
+        mkdir($dir);
+    }
+}
+
+// Render template
+file_put_contents($path, tmpl($data));
+
