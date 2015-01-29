@@ -193,8 +193,13 @@ $bestlen = -1;
 foreach ($prefixes as $k => $v) {
     $len = strlen($k);
     
-    if (($k === '') || (0 === strncmp($k, $class, $len))) {
-        $path = $v.$data['name'].'.php';
+    if (($k === '') || (0 === strncmp($k, $class, $len)) && ($len > $bestlen)) {
+        $path = $v
+            .str_replace(
+                '\\',
+                DIRECTORY_SEPARATOR,
+                ltrim(substr($class, $len), '\\')
+            ).'.php';
         $bestlen = $len;
     }
 }
