@@ -45,7 +45,7 @@ function tmpl($data)
 <?php if ($namespace): ?>
 namespace <?php echo $namespace; ?>;
 
-<?php endif; if (count($use)): foreach ($use as $row): ?>
+<?php endif; if (count($uses)): foreach ($uses as $row): ?>
 use <?php echo $row; ?>;
 <?php endforeach; ?>
 
@@ -293,7 +293,7 @@ foreach ($deps as $k => $v) {
     }
     
     if ($touse) {
-        if (0 !== strncmp($k, $namespace.'\\', strlen($namespace + 1))) {
+        if (0 !== strncmp($k, $namespace.'\\', strlen($namespace) + 1)) {
             $data['uses'][] = $k;
         }
     }
