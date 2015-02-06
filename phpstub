@@ -30,7 +30,8 @@ function tmpl($data)
     ob_start();
     echo '<'."?php\n"; ?>
 /**
- * ...
+ * Copyright (C) <?php echo $year.' '.$author."\n"; ?>
+ * See LICENSE file for usage terms.
  * 
 <?php if (!empty($author)): ?>
  * @author     <?php echo $author."\n"; ?>
